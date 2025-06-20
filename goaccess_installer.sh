@@ -79,62 +79,54 @@ install_goaccess() {
 }
 
 run_goaccess() {
-  # defaults
   LOGFILES=()
   OUTPUT=""
   FORMAT="COMBINED"
   REALTIME=false
   WS_URL="ws://127.0.0.1:7890"
-  SINCE=""
-  UNTIL=""
 
-  # parse
   while [[ $# -gt 0 ]]; do
     case $1 in
-      --logfile) LOGFILES=("$2"); shift 2;;
-      --output) OUTPUT="$2"; shift 2;;
-      --format) FORMAT="$2"; shift 2;;
-      --real-time) REALTIME=true; shift;;
-      --ws-url) WS_URL="$2"; shift 2;;
-      --since) SINCE="$2"; shift 2;;
-      --until) UNTIL="$2"; shift 2;;
-      *) echo "Unknown option: $1"; exit 1;;
+  #    --logfile) LOGFILES+=("$2"); shift 2 ;;
+      --logfile)
+          for f in $2; do
+            LOGFILES+=("$f")
+          done
+          shift 2
+          ;;
+      --output) OUTPUT="$2"; shift 2 ;;
+      --format) FORMAT="$2"; shift 2 ;;
+      --real-time) REALTIME=true; shift ;;
+      --ws-url) WS_URL="$2"; shift 2 ;;
+      *) echo "Unknown option: $1"; exit 1 ;;
     esac
   done
 
-  # autodetect if needed
-  if [[ ${#LOGFILES[@]} -eq 0 ]]; then
-    install_goaccess >/dev/null 2>&1
-    if [[ $WEBSRV == nginx ]]; then
-      LOGFILES=("$(grep -m1 'access_log' /etc/nginx/nginx.conf | awk '{print $2}' | tr -d ';')"*)
-    else
-      LOGFILES=(/var/log/httpd/access_log*)
-    fi
-  fi
+  [[ ${#LOGFILES[@]} -eq 0 ]] && { echo "[!] No log file specified."; exit 1; }
+  [[ $REALTIME = false && -z $OUTPUT ]] && { echo "[!] --output is required for static reports."; exit 1; }
 
-  # prepare files list
-  FILE_LIST="${LOGFILES[@]}"
+  TMP_LOG="/tmp/goaccess_input_$$.log"
+  > "$TMP_LOG"
+
+  for LOG in "${LOGFILES[@]}"; do
+    if [[ "$LOG" == *.gz ]]; then
+      echo "[*] Using zcat for compressed log: $LOG"
+      zcat "$LOG" >> "$TMP_LOG"
+    else
+      cat "$LOG" >> "$TMP_LOG"
+    fi
+  done
 
   if $REALTIME; then
-    echo "[*] Starting GoAccess real-time dashboard..."
-    cat $FILE_LIST | goaccess --log-format=$FORMAT --real-time-html --ws-url=$WS_URL --stdin
+    echo "[*] Launching real-time dashboard on $WS_URL"
+    goaccess "$TMP_LOG" --log-format="$FORMAT" --real-time-html --ws-url="$WS_URL"
   else
-    if [[ -z $OUTPUT ]]; then
-      echo "[!] --output is required for static mode"; exit 1
-    fi
-    mkdir -p "$(dirname "$OUTPUT")"
-    echo "[*] Generating GoAccess report..."
-    # apply filters if any
-    if [[ -n $SINCE || -n $UNTIL ]]; then
-      PATTERN=""
-      [[ -n $SINCE ]] && PATTERN+="^$SINCE"
-      [[ -n $UNTIL ]] && PATTERN+="|^$UNTIL"
-      cat $FILE_LIST | grep -E "$PATTERN" | goaccess --log-format=$FORMAT -o "$OUTPUT" --stdin
-    else
-      cat $FILE_LIST | goaccess --log-format=$FORMAT -o "$OUTPUT" --stdin
-    fi
+    echo "[*] Generating static HTML report: $OUTPUT"
+    goaccess "$TMP_LOG" --log-format="$FORMAT" -o "$OUTPUT"
     echo "[✓] Report saved to $OUTPUT"
   fi
+
+  rm -f "$TMP_LOG"
 }
 
 daily_report() {
@@ -176,10 +168,10 @@ realtime_dashboard() {
 # main
 [[ $# -lt 1 ]] && { print_help; exit; }
 case $1 in
-  install) install_goaccess ;;  
-  run) shift; run_goaccess "$@" ;;  
-  daily-report) daily_report ;;  
-  realtime-dashboard) realtime_dashboard ;;  
-  help) print_help ;;  
+  install) install_goaccess ;;
+  run) shift; run_goaccess "$@" ;;
+  daily-report) daily_report ;;
+  realtime-dashboard) realtime_dashboard ;;
+  help) print_help ;;
   *) print_help; exit 1;;
 esac
