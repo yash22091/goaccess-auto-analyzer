@@ -51,7 +51,7 @@ This script checks whether required services like **Nginx** or **Apache2** are a
 ## Installation
 
 ```bash
-git clone https://github.com/<your-org>/goaccess-auto-analyzer.git
+git clone https://github.com/yash22091/goaccess-auto-analyzer.git
 cd goaccess-auto-analyzer
 chmod +x goaccess_installer.sh
 ./goaccess_installer.sh install
